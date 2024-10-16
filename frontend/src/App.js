@@ -78,9 +78,9 @@ function App() {
               <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                 <tr>
                   <th scope="col" className="px-2 py-3 whitespace-nowrap">Format</th>
-                  <th scope="col" className="px-2 py-3 whitespace-nowrap">Resolution/Bitrate</th>
-                  <th scope="col" className="px-2 py-3 whitespace-nowrap">Filesize</th>
-                  <th scope="col" className="px-2 py-3 whitespace-nowrap">Codec</th>
+                  <th scope="col" className="px-2 py-3 whitespace-nowrap">Quality</th>
+                  <th scope="col" className="hidden sm:table-cell px-2 py-3 whitespace-nowrap">Size</th>
+                  <th scope="col" className="hidden md:table-cell px-2 py-3 whitespace-nowrap">Codec</th>
                   <th scope="col" className="px-2 py-3">
                     <span className="sr-only">Download</span>
                   </th>
@@ -91,8 +91,8 @@ function App() {
                   <tr key={format.format_id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-2 py-4 whitespace-nowrap">{format.ext}</td>
                     <td className="px-2 py-4 whitespace-nowrap">{result.type === 'video' ? format.resolution : `${format.abr}kbps`}</td>
-                    <td className="px-2 py-4 whitespace-nowrap">{format.filesize}</td>
-                    <td className="px-2 py-4 whitespace-nowrap">{result.type === 'video' ? format.vcodec : format.acodec}</td>
+                    <td className="hidden sm:table-cell px-2 py-4 whitespace-nowrap">{format.filesize}</td>
+                    <td className="hidden md:table-cell px-2 py-4 whitespace-nowrap">{result.type === 'video' ? format.vcodec : format.acodec}</td>
                     <td className="px-2 py-4 whitespace-nowrap text-right">
                       <button
                         onClick={() => handleDownload(format)}
@@ -143,7 +143,7 @@ function App() {
             <p className="text-lg font-semibold mb-2">Playlist: {result.title}</p>
             <ul className="list-disc list-inside">
               {result.entries.map((entry, index) => (
-                <li key={index}>{entry.title}</li>
+                <li key={index} className="truncate">{entry.title}</li>
               ))}
             </ul>
           </div>
@@ -155,12 +155,12 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200 py-6 flex flex-col justify-center sm:py-12">
-      <div className="relative py-3 px-4 w-full max-w-7xl mx-auto">
+      <div className="relative py-3 px-4 w-full max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-7xl mx-auto">
         <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-light-blue-500 shadow-lg transform -skew-y-6 sm:skew-y-0 sm:-rotate-6 sm:rounded-3xl"></div>
         <div className="relative bg-white shadow-lg sm:rounded-3xl px-4 py-10 sm:p-20">
           <div className="max-w-full mx-auto">
             <div>
-              <h1 className="text-3xl font-extrabold text-center text-gray-900 mb-6">Media Link Extractor</h1>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-center text-gray-900 mb-6">Media Link Extractor</h1>
             </div>
             <div className="divide-y divide-gray-200">
               <form onSubmit={handleSubmit} className="py-8 text-base leading-6 space-y-4 text-gray-700 sm:text-lg sm:leading-7">
@@ -191,7 +191,7 @@ function App() {
               )}
               {result && (
                 <div className="py-8 text-base leading-6 space-y-4 text-gray-700 sm:text-lg sm:leading-7">
-                  <h2 className="text-2xl font-bold mb-4 text-center text-gray-800">{result.title}</h2>
+                  <h2 className="text-xl sm:text-2xl font-bold mb-4 text-center text-gray-800">{result.title}</h2>
                   {renderMediaContent()}
                 </div>
               )}
