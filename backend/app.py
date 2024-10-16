@@ -11,6 +11,7 @@ import logging
 import threading
 import time
 from urllib.parse import quote
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 CORS(app)
@@ -22,11 +23,16 @@ TEMP_DIR = tempfile.mkdtemp()
 # List to keep track of files to be deleted
 files_to_delete = []
 
+# Global dictionary to track files and their creation times
+file_tracker = {}
+
 def delayed_delete(file_path, retries=5, delay=1):
     for _ in range(retries):
         try:
             os.remove(file_path)
             logging.info(f"Successfully deleted file: {file_path}")
+            if file_path in file_tracker:
+                del file_tracker[file_path]
             return
         except Exception as e:
             logging.warning(f"Failed to delete file: {file_path}. Retrying... Error: {str(e)}")
@@ -34,6 +40,24 @@ def delayed_delete(file_path, retries=5, delay=1):
     
     logging.error(f"Failed to delete file after {retries} attempts: {file_path}")
     files_to_delete.append(file_path)
+
+def cleanup_old_files():
+    while True:
+        current_time = datetime.now()
+        files_to_remove = []
+        
+        for file_path, creation_time in file_tracker.items():
+            if current_time - creation_time > timedelta(hours=1):
+                files_to_remove.append(file_path)
+        
+        for file_path in files_to_remove:
+            delayed_delete(file_path)
+        
+        time.sleep(300)  # Check every 5 minutes
+
+# Start the cleanup thread when the application starts
+cleanup_thread = threading.Thread(target=cleanup_old_files, daemon=True)
+cleanup_thread.start()
 
 # Cleanup function to remove the temporary directory and any leftover files
 def cleanup():
@@ -124,6 +148,9 @@ def download_media():
         downloaded_file = [f for f in os.listdir(TEMP_DIR) if str(unique_id) in f][0]
         full_path = os.path.join(TEMP_DIR, downloaded_file)
         
+        # Add the file to the tracker
+        file_tracker[full_path] = datetime.now()
+        
         # If the downloaded format is different from the requested one, update the resolution
         if downloaded_format != format_id:
             new_resolution = next((f['resolution'] for f in info['formats'] if f['format_id'] == downloaded_format), 'unknown')
@@ -140,9 +167,6 @@ def download_media():
         encoded_filename = quote(final_filename)
         response.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{encoded_filename}"
         response.headers["Access-Control-Expose-Headers"] = "Content-Disposition"
-        
-        # Start a new thread to delete the file after sending
-        threading.Thread(target=delayed_delete, args=(full_path,)).start()
         
         return response
     except Exception as e:
