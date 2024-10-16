@@ -84,6 +84,18 @@ def format_filesize(bytes):
 def sanitize_filename(filename):
     return re.sub(r'[^\w\-_\. ]', '_', filename)
 
+def get_media_type(info):
+    if info.get('_type') == 'playlist':
+        return 'playlist'
+    elif info.get('vcodec') != 'none':
+        return 'video'
+    elif info.get('acodec') != 'none':
+        return 'audio'
+    elif info.get('ext') in ['jpg', 'jpeg', 'png', 'gif']:
+        return 'image'
+    else:
+        return 'unknown'
+
 @app.route('/extract', methods=['POST'])
 def extract_link():
     url = request.json['url']
@@ -95,29 +107,46 @@ def extract_link():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
+            
             if 'entries' in info:
-                video = info['entries'][0]
+                # It's a playlist
+                return jsonify({
+                    'type': 'playlist',
+                    'title': info.get('title', 'Untitled Playlist'),
+                    'entries': [{'title': entry.get('title', 'Untitled'), 'url': entry['webpage_url']} for entry in info['entries']]
+                })
             else:
-                video = info
-            
-            formats = []
-            for f in video['formats']:
-                format_info = {
-                    'format_id': f['format_id'],
-                    'ext': f['ext'],
-                    'filesize': format_filesize(f.get('filesize')),
-                    'tbr': f.get('tbr'),
-                    'resolution': f.get('resolution', 'audio only'),
-                    'vcodec': f.get('vcodec', 'none'),
-                    'acodec': f.get('acodec', 'none'),
-                    'abr': f.get('abr'),
-                }
-                formats.append(format_info)
-            
-            return jsonify({
-                'title': video['title'],
-                'formats': formats
-            })
+                # Single media item
+                media_type = get_media_type(info)
+                
+                formats = []
+                if media_type in ['video', 'audio']:
+                    for f in info['formats']:
+                        format_info = {
+                            'format_id': f['format_id'],
+                            'ext': f['ext'],
+                            'filesize': format_filesize(f.get('filesize')),
+                            'tbr': f.get('tbr'),
+                            'resolution': f.get('resolution', 'audio only'),
+                            'vcodec': f.get('vcodec', 'none'),
+                            'acodec': f.get('acodec', 'none'),
+                            'abr': f.get('abr'),
+                        }
+                        formats.append(format_info)
+                elif media_type == 'image':
+                    formats = [{
+                        'format_id': 'image',
+                        'ext': info.get('ext', 'unknown'),
+                        'filesize': format_filesize(info.get('filesize')),
+                        'width': info.get('width', 'unknown'),
+                        'height': info.get('height', 'unknown'),
+                    }]
+                
+                return jsonify({
+                    'type': media_type,
+                    'title': info.get('title', 'Untitled'),
+                    'formats': formats
+                })
     except Exception as e:
         logging.error(f"Error during link extraction: {str(e)}")
         return jsonify({'error': str(e)}), 400
@@ -125,41 +154,39 @@ def extract_link():
 @app.route('/download', methods=['POST'])
 def download_media():
     url = request.json['url']
-    format_id = request.json['format_id']
+    format_id = request.json.get('format_id', 'best')  # Default to 'best' for images
     title = request.json['title']
-    resolution = request.json['resolution']
     
     sanitized_title = sanitize_filename(title)
     unique_id = uuid.uuid4()
-    temp_filename = f"{sanitized_title}_{resolution}_{unique_id}.%(ext)s"
+    temp_filename = f"{sanitized_title}_{unique_id}.%(ext)s"
     file_path = os.path.join(TEMP_DIR, temp_filename)
     
     ydl_opts = {
-        'format': f'{format_id}/best',  # Fallback to best available if format_id is not available
+        'format': format_id,
         'outtmpl': file_path,
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            # Get the actual format that was downloaded
-            downloaded_format = info['format_id']
             
         downloaded_file = [f for f in os.listdir(TEMP_DIR) if str(unique_id) in f][0]
         full_path = os.path.join(TEMP_DIR, downloaded_file)
         
-        # Add the file to the tracker
         file_tracker[full_path] = datetime.now()
         
-        # If the downloaded format is different from the requested one, update the resolution
-        if downloaded_format != format_id:
-            new_resolution = next((f['resolution'] for f in info['formats'] if f['format_id'] == downloaded_format), 'unknown')
-        else:
-            new_resolution = resolution
-
-        # Create the final filename
+        media_type = get_media_type(info)
         file_extension = os.path.splitext(downloaded_file)[1]
-        final_filename = f"{sanitized_title}_{new_resolution}{file_extension}"
+        
+        if media_type == 'video':
+            resolution = next((f['resolution'] for f in info['formats'] if f['format_id'] == format_id), 'unknown')
+            final_filename = f"{sanitized_title}_{resolution}{file_extension}"
+        elif media_type == 'audio':
+            bitrate = next((f.get('abr', 'unknown') for f in info['formats'] if f['format_id'] == format_id), 'unknown')
+            final_filename = f"{sanitized_title}_{bitrate}kbps{file_extension}"
+        else:  # image or unknown
+            final_filename = f"{sanitized_title}{file_extension}"
 
         logging.debug(f"Sending file: {final_filename}")
 
