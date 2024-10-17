@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
+// Read API base URL from environment variable, fallback to a default if not set
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
+
 function App() {
   const [url, setUrl] = useState('');
   const [result, setResult] = useState(null);
@@ -14,11 +17,28 @@ function App() {
     setError(null);
     setResult(null);
 
+    if (!url.trim()) {
+      setError('Please enter a valid URL');
+      setLoading(false);
+      return;
+    }
+
     try {
-      const response = await axios.post('http://localhost:5000/extract', { url });
+      const response = await axios.post(`${API_BASE_URL}/extract`, { url });
       setResult(response.data);
     } catch (err) {
-      setError(err.response?.data?.error || 'An error occurred');
+      console.error('Extraction error:', err);
+      if (err.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        setError(`Server error: ${err.response.data.error || err.response.statusText}`);
+      } else if (err.request) {
+        // The request was made but no response was received
+        setError('No response from server. Please check your network connection.');
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        setError(`An error occurred: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -27,7 +47,7 @@ function App() {
   const handleDownload = async (format) => {
     setDownloadingFormats(prev => ({ ...prev, [format.format_id]: true }));
     try {
-      const response = await axios.post('http://localhost:5000/download', 
+      const response = await axios.post(`${API_BASE_URL}/download`, 
         { 
           url, 
           format_id: format.format_id,
@@ -60,7 +80,13 @@ function App() {
       document.body.removeChild(link);
     } catch (err) {
       console.error('Download error:', err);
-      setError(err.response?.data?.error || 'Download failed');
+      let errorMessage = 'Download failed. Please try again.';
+      if (err.response && err.response.data && err.response.data.error) {
+        errorMessage = `Download failed: ${err.response.data.error}`;
+      } else if (err.message) {
+        errorMessage = `Download failed: ${err.message}`;
+      }
+      setError(errorMessage);
     } finally {
       setDownloadingFormats(prev => ({ ...prev, [format.format_id]: false }));
     }
@@ -178,7 +204,7 @@ function App() {
                   <button 
                     type="submit" 
                     disabled={loading} 
-                    className="w-full bg-gradient-to-r from-cyan-400 to-light-blue-500 text-white rounded-md px-4 py-2 hover:from-cyan-500 hover:to-light-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-opacity-50 transition duration-300 ease-in-out transform hover:-translate-y-1 hover:scale-105"
+                    className="w-full bg-gradient-to-r from-cyan-400 to-light-blue-500 text-white rounded-md px-4 py-2 hover:from-cyan-500 hover:to-light-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-opacity-50 transition duration-300 ease-in-out transform hover:-translate-y-1 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? 'Extracting...' : 'Extract'}
                   </button>
@@ -186,6 +212,7 @@ function App() {
               </form>
               {error && (
                 <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4" role="alert">
+                  <p className="font-bold">Error</p>
                   <p>{error}</p>
                 </div>
               )}

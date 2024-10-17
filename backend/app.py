@@ -8,17 +8,25 @@ import uuid
 import atexit
 import shutil
 import logging
+from logging.handlers import RotatingFileHandler
 import threading
 import time
 from urllib.parse import quote
 from datetime import datetime, timedelta
 
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+file_handler = RotatingFileHandler('app.log', maxBytes=10485760, backupCount=10)
+file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'))
+file_handler.setLevel(logging.INFO)
+logging.getLogger().addHandler(file_handler)
+
 app = Flask(__name__)
 CORS(app)
-logging.basicConfig(level=logging.DEBUG)
 
 # Create a temporary directory for downloads
 TEMP_DIR = tempfile.mkdtemp()
+logging.info(f"Created temporary directory: {TEMP_DIR}")
 
 # List to keep track of files to be deleted
 files_to_delete = []
@@ -51,6 +59,7 @@ def cleanup_old_files():
                 files_to_remove.append(file_path)
         
         for file_path in files_to_remove:
+            logging.info(f"Cleaning up old file: {file_path}")
             delayed_delete(file_path)
         
         time.sleep(300)  # Check every 5 minutes
@@ -58,16 +67,20 @@ def cleanup_old_files():
 # Start the cleanup thread when the application starts
 cleanup_thread = threading.Thread(target=cleanup_old_files, daemon=True)
 cleanup_thread.start()
+logging.info("Started cleanup thread")
 
 # Cleanup function to remove the temporary directory and any leftover files
 def cleanup():
+    logging.info("Performing cleanup on application exit")
     for file_path in files_to_delete:
         try:
             os.remove(file_path)
+            logging.info(f"Deleted file during cleanup: {file_path}")
         except Exception as e:
             logging.error(f"Failed to delete file during cleanup: {file_path}. Error: {str(e)}")
     
     shutil.rmtree(TEMP_DIR, ignore_errors=True)
+    logging.info(f"Removed temporary directory: {TEMP_DIR}")
 
 # Register the cleanup function to be called when the application exits
 atexit.register(cleanup)
@@ -99,6 +112,7 @@ def get_media_type(info):
 @app.route('/extract', methods=['POST'])
 def extract_link():
     url = request.json['url']
+    logging.info(f"Extracting info for URL: {url}")
     
     ydl_opts = {
         'quiet': True,
@@ -110,6 +124,7 @@ def extract_link():
             
             if 'entries' in info:
                 # It's a playlist
+                logging.info(f"Extracted playlist info: {info.get('title', 'Untitled Playlist')}")
                 return jsonify({
                     'type': 'playlist',
                     'title': info.get('title', 'Untitled Playlist'),
@@ -118,6 +133,7 @@ def extract_link():
             else:
                 # Single media item
                 media_type = get_media_type(info)
+                logging.info(f"Extracted {media_type} info: {info.get('title', 'Untitled')}")
                 
                 formats = []
                 if media_type in ['video', 'audio']:
@@ -148,7 +164,7 @@ def extract_link():
                     'formats': formats
                 })
     except Exception as e:
-        logging.error(f"Error during link extraction: {str(e)}")
+        logging.error(f"Error during link extraction: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 400
 
 @app.route('/download', methods=['POST'])
@@ -156,6 +172,8 @@ def download_media():
     url = request.json['url']
     format_id = request.json.get('format_id', 'best')  # Default to 'best' for images
     title = request.json['title']
+    
+    logging.info(f"Downloading media: {title} (format: {format_id})")
     
     sanitized_title = sanitize_filename(title)
     unique_id = uuid.uuid4()
@@ -175,6 +193,7 @@ def download_media():
         full_path = os.path.join(TEMP_DIR, downloaded_file)
         
         file_tracker[full_path] = datetime.now()
+        logging.info(f"Downloaded file: {full_path}")
         
         media_type = get_media_type(info)
         file_extension = os.path.splitext(downloaded_file)[1]
@@ -188,7 +207,7 @@ def download_media():
         else:  # image or unknown
             final_filename = f"{sanitized_title}{file_extension}"
 
-        logging.debug(f"Sending file: {final_filename}")
+        logging.info(f"Sending file: {final_filename}")
 
         response = make_response(send_file(full_path, as_attachment=True))
         encoded_filename = quote(final_filename)
@@ -197,15 +216,16 @@ def download_media():
         
         return response
     except Exception as e:
-        logging.error(f"Error during download: {str(e)}")
+        logging.error(f"Error during download: {str(e)}", exc_info=True)
         if os.path.exists(full_path):
             os.remove(full_path)
         return jsonify({'error': str(e)}), 400
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    logging.error(f"Unhandled exception: {str(e)}")
+    logging.error(f"Unhandled exception: {str(e)}", exc_info=True)
     return jsonify({'error': 'An unexpected error occurred'}), 500
 
 if __name__ == '__main__':
+    logging.info("Starting the application")
     app.run(debug=True)
