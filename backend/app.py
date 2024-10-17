@@ -254,25 +254,30 @@ def download_media():
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    # 获取当前的异常信息
-    exc_type, exc_value, exc_traceback = sys.exc_info()
-    
-    # 根据 Python 版本选择合适的 format_exception 调用方式
-    if sys.version_info >= (3, 10):
-        # Python 3.10 及以上版本
-        exception_details = traceback.format_exception(exc_value)
-    else:
-        # Python 3.9 及以下版本
-        exception_details = traceback.format_exception(exc_type, exc_value, exc_traceback)
-    
-    # 将异常详情转换为字符串
-    error_msg = ''.join(exception_details)
+    # 获取异常的详细信息
+    exc_info = traceback.format_exc()
     
     # 记录错误
-    logging.error(f"Unhandled exception: {error_msg}")
+    logging.error(f"Unhandled exception: {str(e)}\n{exc_info}")
     
-    # 返回给客户端的响应
-    return jsonify({'error': 'An unexpected error occurred', 'details': str(e)}), 500
+    # 返回给客户端的错误信息
+    error_message = f"An unexpected error occurred: {str(e)}"
+    
+    return jsonify({'error': error_message}), 500
+
+# 在主应用代码中添加全局异常处理
+@app.before_request
+def before_request():
+    pass
+
+@app.after_request
+def after_request(response):
+    return response
+
+@app.teardown_request
+def teardown_request(exception):
+    if exception:
+        logging.error(f"Request teardown error: {str(exception)}")
 
 if __name__ == '__main__':
     update_yt_dlp()  # Update yt-dlp before starting the application
