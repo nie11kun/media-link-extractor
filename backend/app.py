@@ -13,6 +13,8 @@ import threading
 import time
 from urllib.parse import quote
 from datetime import datetime, timedelta
+import subprocess
+import sys
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -109,6 +111,27 @@ def get_media_type(info):
     else:
         return 'unknown'
 
+def is_douyin_url(url):
+    return 'douyin.com' in url or 'tiktok.com' in url
+
+def update_yt_dlp():
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"])
+        logging.info("yt-dlp has been updated successfully")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to update yt-dlp: {str(e)}")
+
+def download_with_retry(url, ydl_opts, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(url, download=True)
+        except yt_dlp.utils.DownloadError as e:
+            if attempt == max_retries - 1:
+                raise
+            logging.warning(f"Download failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            time.sleep(2 ** attempt)  # Exponential backoff
+
 @app.route('/extract', methods=['POST'])
 def extract_link():
     url = request.json['url']
@@ -117,6 +140,10 @@ def extract_link():
     ydl_opts = {
         'quiet': True,
     }
+    
+    if is_douyin_url(url):
+        ydl_opts['cookiesfrombrowser'] = ('chrome',)
+        ydl_opts['user_agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -185,10 +212,13 @@ def download_media():
         'outtmpl': file_path,
     }
     
+    if is_douyin_url(url):
+        ydl_opts['cookiesfrombrowser'] = ('chrome',)
+        ydl_opts['user_agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            
+        info = download_with_retry(url, ydl_opts)
+        
         downloaded_file = [f for f in os.listdir(TEMP_DIR) if str(unique_id) in f][0]
         full_path = os.path.join(TEMP_DIR, downloaded_file)
         
@@ -227,5 +257,6 @@ def handle_exception(e):
     return jsonify({'error': 'An unexpected error occurred'}), 500
 
 if __name__ == '__main__':
+    update_yt_dlp()  # Update yt-dlp before starting the application
     logging.info("Starting the application")
     app.run(host='127.0.0.1', port=5111, debug=True)
