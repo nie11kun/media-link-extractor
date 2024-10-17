@@ -23,7 +23,7 @@
 
 1. 克隆仓库：
    ```
-   git clone https://media-link-extractor.git
+   git clone https://github.com/nie11kun/media-link-extractor.git
    ```
 2. 进入项目目录：
    ```
