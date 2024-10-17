@@ -228,4 +228,4 @@ def handle_exception(e):
 
 if __name__ == '__main__':
     logging.info("Starting the application")
-    app.run(debug=True)
+    app.run(host='127.0.0.1', port=5111, debug=True)
